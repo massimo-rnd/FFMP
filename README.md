@@ -42,7 +42,7 @@ You can adjust your codec by using any codec that is installed on your system be
 
 If you want to see all of FFMPEGs output, just use the `--verbose` flag.
 
-For more info on the -o syntax, run ffzap --help. For more ffmpeg options, visit [ffmpeg's documentation](https://ffmpeg.org/ffmpeg.html).
+For more ffmpeg options, visit [ffmpeg's documentation](https://ffmpeg.org/ffmpeg.html).
 
 ## 🤝 Contributing
 

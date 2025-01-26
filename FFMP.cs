@@ -70,19 +70,15 @@ class FFMP
             var tasks = new List<Task>();
             var semaphore = new SemaphoreSlim(options.ThreadCount);
 
-            var progressLines = new ConcurrentDictionary<string, int>();
-            var currentLine = 0;
-
             foreach (var inputFile in inputFiles)
             {
-                progressLines.TryAdd(inputFile, currentLine++);
                 await semaphore.WaitAsync();
                 tasks.Add(Task.Run(async () =>
                 {
                     try
                     {
                         Console.WriteLine($"Processing file: {inputFile}");
-                        await ProcessFile(inputFile, options, progress, progressLines);
+                        await ProcessFile(inputFile, options, progress);
                     }
                     catch (Exception ex)
                     {
@@ -111,13 +107,13 @@ class FFMP
         {
             if (!string.IsNullOrEmpty(options.InputDirectory))
             {
-                return Directory.EnumerateFiles(options.InputDirectory, "*.*")
+                return Directory.EnumerateFiles(Path.GetFullPath(options.InputDirectory), "*.*")
                     .Where(file => new[] { ".mp4", ".mkv", ".avi" }.Contains(Path.GetExtension(file).ToLower()));
             }
 
             if (!string.IsNullOrEmpty(options.InputFile) && File.Exists(options.InputFile))
             {
-                return File.ReadLines(options.InputFile);
+                return File.ReadLines(Path.GetFullPath(options.InputFile));
             }
         }
         catch (Exception ex)
@@ -128,7 +124,7 @@ class FFMP
         return Enumerable.Empty<string>();
     }
 
-    static async Task ProcessFile(string inputFile, Options options, ProgressBar progress, ConcurrentDictionary<string, int> progressLines)
+    static async Task ProcessFile(string inputFile, Options options, ProgressBar progress)
     {
         var outputFile = GenerateOutputFilePath(inputFile, options.OutputPattern);
 
@@ -139,13 +135,17 @@ class FFMP
         }
 
         var ffmpegOptions = options.FFmpegOptions.TrimStart('=');
-        
-        var arguments = $"-i \"{inputFile}\" -c:v {options.Codec}";
+
+        // Escape paths to handle spaces and special characters on Windows
+        inputFile = $"\"{Path.GetFullPath(inputFile)}\"";
+        outputFile = $"\"{Path.GetFullPath(outputFile)}\"";
+
+        var arguments = $"-i {inputFile} -c:v {options.Codec}";
         if (!string.IsNullOrEmpty(options.Preset))
         {
             arguments += $" -preset {options.Preset}";
         }
-        arguments += $" \"{outputFile}\"";
+        arguments += $" {outputFile}";
 
         if (!options.Verbose)
         {
@@ -167,42 +167,34 @@ class FFMP
             }
         };
 
+        var errorOutput = new StringBuilder();
         try
         {
             process.Start();
 
-            var lineIndex = progressLines[inputFile];
-
-            if (options.Verbose)
+            process.ErrorDataReceived += (sender, e) =>
             {
-                process.ErrorDataReceived += (sender, e) =>
+                if (!string.IsNullOrEmpty(e.Data))
                 {
-                    if (!string.IsNullOrEmpty(e.Data))
-                    {
-                        lock (progressLines)
-                        {
-                            Console.SetCursorPosition(0, lineIndex);
-                            Console.WriteLine(e.Data.PadRight(Console.WindowWidth));
-                        }
-                    }
-                };
-                process.BeginErrorReadLine();
-            }
+                    errorOutput.AppendLine(e.Data);
+                    if (options.Verbose)
+                        Console.Error.WriteLine(e.Data);
+                }
+            };
+
+            process.BeginErrorReadLine();
 
             await process.WaitForExitAsync();
 
-            // Ensure process streams are flushed and closed
-            process.CancelOutputRead();
-            process.CancelErrorRead();
-
-            Console.WriteLine($"FFmpeg process exited with code: {process.ExitCode}");
-
-            if (!options.Verbose)
+            if (process.ExitCode != 0)
             {
-                lock (progress)
-                {
-                    progress.Report(1.0 / options.ThreadCount);
-                }
+                Console.WriteLine($"FFmpeg process exited with code: {process.ExitCode}");
+                Console.WriteLine("FFmpeg encountered an error:");
+                Console.WriteLine(errorOutput.ToString());
+            }
+            else
+            {
+                Console.WriteLine($"FFmpeg process completed successfully for file: {inputFile}");
             }
         }
         catch (Exception ex)
@@ -226,4 +218,6 @@ class FFMP
                       .Replace("{{ext}}", extension);
     }
 }
+
+
 
