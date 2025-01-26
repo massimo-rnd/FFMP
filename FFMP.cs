@@ -169,6 +169,7 @@ class FFMP
                 Arguments = arguments,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
+                RedirectStandardInput = true, // Added to allow input redirection
                 UseShellExecute = false,
                 CreateNoWindow = true
             }
@@ -179,7 +180,14 @@ class FFMP
         {
             process.Start();
 
-            process.StandardInput.WriteLine("Y"); // Automatically respond with 'Y'
+            // Write 'Y' to the StandardInput stream to confirm overwrite
+            if (options.Overwrite)
+            {
+                using (var writer = process.StandardInput)
+                {
+                    writer.WriteLine("Y");
+                }
+            }
 
             process.ErrorDataReceived += (sender, e) =>
             {
