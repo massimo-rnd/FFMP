@@ -18,12 +18,17 @@ class FFMP
         {
             Console.WriteLine("Starting application...");
 
-            // Output raw arguments for debugging
             Console.WriteLine("Arguments received:");
             foreach (var arg in args)
             {
                 Console.WriteLine(arg);
             }
+
+            Console.CancelKeyPress += (sender, e) => {
+                Console.WriteLine("Terminating processes...");
+                Process.GetProcessesByName("ffmpeg").ToList().ForEach(p => p.Kill());
+                Environment.Exit(0);
+            };
 
             Parser.Default.ParseArguments<Options>(args)
                 .WithParsed(options => Run(options).Wait())
@@ -78,7 +83,7 @@ class FFMP
                     try
                     {
                         Console.WriteLine($"Processing file: {inputFile}");
-                        await ProcessFile(inputFile, options, progress);
+                        await ProcessFile(inputFile, options, progress, inputFiles.Count);
                     }
                     catch (Exception ex)
                     {
@@ -124,9 +129,12 @@ class FFMP
         return Enumerable.Empty<string>();
     }
 
-    static async Task ProcessFile(string inputFile, Options options, ProgressBar progress)
+    static async Task ProcessFile(string inputFile, Options options, ProgressBar progress, int totalFiles)
     {
         var outputFile = GenerateOutputFilePath(inputFile, options.OutputPattern);
+
+        // Ensure directory exists
+        Directory.CreateDirectory(Path.GetDirectoryName(outputFile)!);
 
         if (File.Exists(outputFile) && !options.Overwrite)
         {
@@ -136,7 +144,6 @@ class FFMP
 
         var ffmpegOptions = options.FFmpegOptions.TrimStart('=');
 
-        // Escape paths to handle spaces and special characters on Windows
         inputFile = $"\"{Path.GetFullPath(inputFile)}\"";
         outputFile = $"\"{Path.GetFullPath(outputFile)}\"";
 
@@ -172,6 +179,8 @@ class FFMP
         {
             process.Start();
 
+            process.StandardInput.WriteLine("Y"); // Automatically respond with 'Y'
+
             process.ErrorDataReceived += (sender, e) =>
             {
                 if (!string.IsNullOrEmpty(e.Data))
@@ -203,6 +212,7 @@ class FFMP
         }
         finally
         {
+            progress.Report(1.0 / totalFiles);
             process.Dispose();
         }
     }
@@ -218,6 +228,3 @@ class FFMP
                       .Replace("{{ext}}", extension);
     }
 }
-
-
-
