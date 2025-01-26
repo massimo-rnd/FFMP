@@ -18,12 +18,6 @@ class FFMP
         {
             Console.WriteLine("Starting application...");
 
-            Console.WriteLine("Arguments received:");
-            foreach (var arg in args)
-            {
-                Console.WriteLine(arg);
-            }
-
             Console.CancelKeyPress += (sender, e) => {
                 Console.WriteLine("Terminating processes...");
                 Process.GetProcessesByName("ffmpeg").ToList().ForEach(p => p.Kill());
@@ -52,11 +46,6 @@ class FFMP
     {
         try
         {
-            Console.WriteLine($"Input Directory: {options.InputDirectory}");
-            Console.WriteLine($"FFmpeg Options: {options.FFmpegOptions}");
-            Console.WriteLine($"Output Pattern: {options.OutputPattern}");
-            Console.WriteLine($"Thread Count: {options.ThreadCount}");
-
             var inputFiles = GetInputFiles(options)?.ToList();
 
             if (inputFiles == null || !inputFiles.Any())
@@ -133,7 +122,11 @@ class FFMP
     {
         var outputFile = GenerateOutputFilePath(inputFile, options.OutputPattern);
 
-        // Ensure directory exists
+        // Ensure directory exists or defaults to the input file's directory
+        if (string.IsNullOrEmpty(Path.GetDirectoryName(outputFile)))
+        {
+            outputFile = Path.Combine(Path.GetDirectoryName(inputFile)!, outputFile);
+        }
         Directory.CreateDirectory(Path.GetDirectoryName(outputFile)!);
 
         if (File.Exists(outputFile) && !options.Overwrite)
@@ -231,8 +224,16 @@ class FFMP
         var fileName = Path.GetFileNameWithoutExtension(inputFile);
         var extension = Path.GetExtension(inputFile);
 
-        return pattern.Replace("{{dir}}", directory)
-                      .Replace("{{name}}", fileName)
-                      .Replace("{{ext}}", extension);
+        var outputPath = pattern.Replace("{{dir}}", directory)
+                                .Replace("{{name}}", fileName)
+                                .Replace("{{ext}}", extension);
+
+        // Ensure the output path has a directory; default to input file's directory
+        if (string.IsNullOrWhiteSpace(Path.GetDirectoryName(outputPath)))
+        {
+            outputPath = Path.Combine(directory!, outputPath);
+        }
+
+        return outputPath;
     }
 }

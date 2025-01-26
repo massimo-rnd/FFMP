@@ -38,6 +38,12 @@ dotnet path/to/FFMP.dll --codec libx265 --preset fast -d "/path/to/input/files" 
 ```
 Using FFMP for a single file doesn't really make sense. Use this tool if you have a folder of videos you want to process.
 
+You can also use a text-file with paths to video files as an input like this:
+
+```bash
+dotnet path/to/FFMP.dll --codec libx265 --preset fast -t "/path/to/videos.txt" --output-pattern "/path/to/output/files/{{name}}_compressed{{ext}}" --threads 2
+```
+
 You can adjust your codec by using any codec that is installed on your system behind the `--codec` parameter. Same goes for the preset in `--preset`.
 
 If you want to see all of FFMPEGs output, just use the `--verbose` flag.
