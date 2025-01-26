@@ -1,4 +1,3 @@
-﻿
 ﻿namespace FFMP;
 
 using System;
@@ -6,6 +5,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using CommandLine;
@@ -70,19 +70,19 @@ class FFMP
             var tasks = new List<Task>();
             var semaphore = new SemaphoreSlim(options.ThreadCount);
 
+            var progressLines = new ConcurrentDictionary<string, int>();
+            var currentLine = 0;
+
             foreach (var inputFile in inputFiles)
             {
+                progressLines.TryAdd(inputFile, currentLine++);
                 await semaphore.WaitAsync();
                 tasks.Add(Task.Run(async () =>
                 {
                     try
                     {
                         Console.WriteLine($"Processing file: {inputFile}");
-                        await ProcessFile(inputFile, options);
-                        lock (progress)
-                        {
-                            progress.Report(1.0 / inputFiles.Count);
-                        }
+                        await ProcessFile(inputFile, options, progress, progressLines);
                     }
                     catch (Exception ex)
                     {
@@ -128,7 +128,7 @@ class FFMP
         return Enumerable.Empty<string>();
     }
 
-    static async Task ProcessFile(string inputFile, Options options)
+    static async Task ProcessFile(string inputFile, Options options, ProgressBar progress, ConcurrentDictionary<string, int> progressLines)
     {
         var outputFile = GenerateOutputFilePath(inputFile, options.OutputPattern);
 
@@ -138,17 +138,19 @@ class FFMP
             return;
         }
 
-        // Remove the '=' from the start of FFmpegOptions if present
         var ffmpegOptions = options.FFmpegOptions.TrimStart('=');
         
-    // Build FFmpeg command using explicit options
-    var arguments = $"-i \"{inputFile}\" -c:v {options.Codec}";
-    if (!string.IsNullOrEmpty(options.Preset))
-    {
-        arguments += $" -preset {options.Preset}";
-    }
-    arguments += $" \"{outputFile}\"";
-    
+        var arguments = $"-i \"{inputFile}\" -c:v {options.Codec}";
+        if (!string.IsNullOrEmpty(options.Preset))
+        {
+            arguments += $" -preset {options.Preset}";
+        }
+        arguments += $" \"{outputFile}\"";
+
+        if (!options.Verbose)
+        {
+            arguments = $"-loglevel error {arguments}";
+        }
 
         Console.WriteLine($"Executing FFmpeg command: ffmpeg {arguments}");
 
@@ -157,12 +159,11 @@ class FFMP
             StartInfo = new ProcessStartInfo
             {
                 FileName = "ffmpeg",
-                //FileName = "/usr/local/bin/ffmpeg",
                 Arguments = arguments,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
-                CreateNoWindow = true  // Change to false to see console output
+                CreateNoWindow = true
             }
         };
 
@@ -170,24 +171,39 @@ class FFMP
         {
             process.Start();
 
-            // Capture output in real-time
-            process.OutputDataReceived += (sender, e) => 
-            {
-                if (!string.IsNullOrEmpty(e.Data))
-                    Console.WriteLine(e.Data);
-            };
-            process.ErrorDataReceived += (sender, e) => 
-            {
-                if (!string.IsNullOrEmpty(e.Data))
-                    Console.Error.WriteLine(e.Data);
-            };
+            var lineIndex = progressLines[inputFile];
 
-            process.BeginOutputReadLine();
-            process.BeginErrorReadLine();
+            if (options.Verbose)
+            {
+                process.ErrorDataReceived += (sender, e) =>
+                {
+                    if (!string.IsNullOrEmpty(e.Data))
+                    {
+                        lock (progressLines)
+                        {
+                            Console.SetCursorPosition(0, lineIndex);
+                            Console.WriteLine(e.Data.PadRight(Console.WindowWidth));
+                        }
+                    }
+                };
+                process.BeginErrorReadLine();
+            }
 
             await process.WaitForExitAsync();
 
+            // Ensure process streams are flushed and closed
+            process.CancelOutputRead();
+            process.CancelErrorRead();
+
             Console.WriteLine($"FFmpeg process exited with code: {process.ExitCode}");
+
+            if (!options.Verbose)
+            {
+                lock (progress)
+                {
+                    progress.Report(1.0 / options.ThreadCount);
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -210,5 +226,4 @@ class FFMP
                       .Replace("{{ext}}", extension);
     }
 }
-
 
