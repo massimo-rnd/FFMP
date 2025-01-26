@@ -34,7 +34,7 @@ A multithreaded C# CLI for digital media processing using FFMPEG. Transcode as m
 FFMP's usage is almost identical to FFMPEG, consider this simple example:
 
 ```bash
-dotnet bin/Debug/net8.0/FFMP.dll --codec libx265 --preset fast -d "/path/to/input/files" --output-pattern "/path/to/output/files/{{name}}_compressed{{ext}}" --threads 2
+dotnet path/to/FFMP.dll --codec libx265 --preset fast -d "/path/to/input/files" --output-pattern "/path/to/output/files/{{name}}_compressed{{ext}}" --threads 2
 ```
 Using FFMP for a single file doesn't really make sense. Use this tool if you have a folder of videos you want to process.
 
