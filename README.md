@@ -46,6 +46,13 @@ dotnet path/to/FFMP.dll --codec libx265 --preset fast -t "/path/to/videos.txt" -
 
 You can adjust your codec by using any codec that is installed on your system behind the `--codec` parameter. Same goes for the preset in `--preset`.
 
+If you need to pass any other arguments to FFMPEG (like audio codecs, video bitrate, subtitle processing, etc.) you can do it like this:
+
+```bash
+dotnet path/to/FFMP.dll --codec libx265 --preset fast -t "/path/to/videos.txt" --output-pattern "/path/to/output/files/{{name}}_compressed{{ext}}" --threads 2 -- -crf 22 -pix_fmt yuv420p10le -c:a libopus -b:a 320k -c:s copy
+```
+Everything behind the `--` indicator is passed directly to FFMPEG.
+
 If you want to see all of FFMPEGs output, just use the `--verbose` flag.
 
 For more ffmpeg options, visit [ffmpeg's documentation](https://ffmpeg.org/ffmpeg.html).
