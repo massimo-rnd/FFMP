@@ -101,8 +101,16 @@ class FFMP
         {
             if (!string.IsNullOrEmpty(options.InputDirectory))
             {
+                var excludedExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    // Non-Media file filter
+                    ".txt", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".json", ".xml", ".html", 
+                    ".htm", ".exe", ".dll", ".bat", ".cmd", ".zip", ".rar", ".7z", ".tar", 
+                    ".gz", ".iso", ".bin", ".log", ".ini", ".cfg", ".tmp"
+                };
+
                 return Directory.EnumerateFiles(Path.GetFullPath(options.InputDirectory), "*.*")
-                    .Where(file => new[] { ".mp4", ".mkv", ".avi" }.Contains(Path.GetExtension(file).ToLower()));
+                    .Where(file => !excludedExtensions.Contains(Path.GetExtension(file)));
             }
 
             if (!string.IsNullOrEmpty(options.InputFile) && File.Exists(options.InputFile))
