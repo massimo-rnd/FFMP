@@ -18,6 +18,12 @@ class FFMP
         {
             Console.WriteLine("Starting application...");
 
+            if (args == null || args.Length == 0)
+            {
+                Console.WriteLine("Error: No arguments provided. Please specify required arguments.");
+                Environment.Exit(1);
+            }
+
             Console.CancelKeyPress += (sender, e) => {
                 Console.WriteLine("Terminating processes...");
                 Process.GetProcessesByName("ffmpeg").ToList().ForEach(p => p.Kill());
@@ -25,7 +31,16 @@ class FFMP
             };
 
             Parser.Default.ParseArguments<Options>(args)
-                .WithParsed(options => Run(options).Wait())
+                .WithParsed(options => {
+                    if (ValidateOptions(options))
+                    {
+                        Run(options).Wait();
+                    }
+                    else
+                    {
+                        Environment.Exit(1);
+                    }
+                })
                 .WithNotParsed(errors => {
                     Console.WriteLine("Failed to parse arguments.");
                     foreach (var error in errors)
@@ -41,6 +56,7 @@ class FFMP
             Console.WriteLine(ex.StackTrace);
         }
     }
+
 
     static async Task Run(Options options)
     {
@@ -244,4 +260,42 @@ class FFMP
 
         return outputPath;
     }
+    
+    private static bool ValidateOptions(Options options)
+    {
+        bool isValid = true;
+
+        if (string.IsNullOrWhiteSpace(options.Codec))
+        {
+            Console.WriteLine("Error: The 'codec' argument is required.");
+            isValid = false;
+        }
+
+        if (string.IsNullOrWhiteSpace(options.OutputPattern))
+        {
+            Console.WriteLine("Error: The 'output-pattern' argument is required.");
+            isValid = false;
+        }
+
+        if (string.IsNullOrWhiteSpace(options.InputDirectory) && string.IsNullOrWhiteSpace(options.InputFile))
+        {
+            Console.WriteLine("Error: Either 'directory' or 'file' argument must be provided for input.");
+            isValid = false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(options.InputFile) && !File.Exists(options.InputFile))
+        {
+            Console.WriteLine($"Error: Specified input file '{options.InputFile}' does not exist.");
+            isValid = false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(options.InputDirectory) && !Directory.Exists(options.InputDirectory))
+        {
+            Console.WriteLine($"Error: Specified input directory '{options.InputDirectory}' does not exist.");
+            isValid = false;
+        }
+
+        return isValid;
+    }
+
 }
