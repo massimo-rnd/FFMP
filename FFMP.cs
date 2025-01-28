@@ -12,74 +12,73 @@ using CommandLine;
 class FFMP
 {
     static void Main(string[] args)
-{
-    try
     {
-        Console.WriteLine("Starting application...");
-
-        // Split args into application and FFmpeg arguments
-        var appArgs = args.TakeWhile(arg => arg != "--").ToArray();
-        var ffmpegArgs = args.SkipWhile(arg => arg != "--").Skip(1).ToArray();
-
-        if (!appArgs.Any())
+        try
         {
-            Console.WriteLine("Error: No arguments provided. Please specify required arguments.");
-            Environment.Exit(1);
-        }
+            Console.WriteLine("Starting application...");
 
-        Console.CancelKeyPress += (sender, e) =>
-        {
-            Console.WriteLine("Terminating processes...");
-            foreach (var process in TrackedProcesses.ToList())
+            // Split args into application and FFmpeg arguments
+            var appArgs = args.TakeWhile(arg => arg != "--").ToArray();
+            var ffmpegArgs = args.SkipWhile(arg => arg != "--").Skip(1).ToArray();
+
+            if (!appArgs.Any())
             {
-                try
-                {
-                    if (process != null && !process.HasExited)
-                    {
-                        process.Kill();
-                        Console.WriteLine($"Terminated FFmpeg process with ID {process.Id}");
-                    }
-                }
-                catch (InvalidOperationException ex)
-                {
-                    Console.WriteLine($"Process already terminated or invalid: {ex.Message}");
-                }
+                Console.WriteLine("Error: No arguments provided. Please specify required arguments.");
+                Environment.Exit(1);
             }
 
-            e.Cancel = true;
-            Environment.Exit(0);
-        };
-
-        Parser.Default.ParseArguments<Options>(appArgs)
-            .WithParsed(options =>
+            Console.CancelKeyPress += (sender, e) =>
             {
-                if (ValidateOptions(options))
+                Console.WriteLine("Terminating processes...");
+                foreach (var process in TrackedProcesses.ToList())
                 {
-                    Run(options, ffmpegArgs).Wait();
+                    try
+                    {
+                        if (process != null && !process.HasExited)
+                        {
+                            process.Kill();
+                            Console.WriteLine($"Terminated FFmpeg process with ID {process.Id}");
+                        }
+                    }
+                    catch (InvalidOperationException ex)
+                    {
+                        Console.WriteLine($"Process already terminated or invalid: {ex.Message}");
+                    }
                 }
-                else
+
+                e.Cancel = true;
+                Environment.Exit(0);
+            };
+
+            Parser.Default.ParseArguments<Options>(appArgs)
+                .WithParsed(options =>
                 {
+                    if (ValidateOptions(options))
+                    {
+                        Run(options, ffmpegArgs).Wait();
+                    }
+                    else
+                    {
+                        Environment.Exit(1);
+                    }
+                })
+                .WithNotParsed(errors =>
+                {
+                    Console.WriteLine("Failed to parse arguments.");
+                    foreach (var error in errors)
+                    {
+                        Console.WriteLine(error.ToString());
+                    }
+
                     Environment.Exit(1);
-                }
-            })
-            .WithNotParsed(errors =>
-            {
-                Console.WriteLine("Failed to parse arguments.");
-                foreach (var error in errors)
-                {
-                    Console.WriteLine(error.ToString());
-                }
-
-                Environment.Exit(1);
-            });
+                });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Fatal error: {ex.Message}");
+            Console.WriteLine(ex.StackTrace);
+        }
     }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"Fatal error: {ex.Message}");
-        Console.WriteLine(ex.StackTrace);
-    }
-}
-
 
     private static readonly ConcurrentBag<Process> TrackedProcesses = new ConcurrentBag<Process>();
 
@@ -113,6 +112,8 @@ class FFMP
                     try
                     {
                         Console.WriteLine($"Processing file: {inputFile}");
+
+                        // Call the ProcessFile method
                         await ProcessFile(inputFile, options, ffmpegArgs, progress, inputFiles.Count);
                     }
                     catch (Exception ex)
@@ -135,7 +136,6 @@ class FFMP
             Console.WriteLine($"Error: {ex.Message}");
         }
     }
-
 
     static IEnumerable<string> GetInputFiles(Options options)
     {
@@ -191,113 +191,124 @@ class FFMP
         return Enumerable.Empty<string>();
     }
 
-    static async Task ProcessFile(string inputFile, Options options, string[] ffmpegArgs, ProgressBar progress, int totalFiles)
-{
-    var outputFile = GenerateOutputFilePath(inputFile, options.OutputPattern);
-
-    if (string.IsNullOrEmpty(Path.GetDirectoryName(outputFile)))
+    static async Task ProcessFile(string inputFile, Options options, string[] ffmpegArgs, ProgressBar progress,
+        int totalFiles)
     {
-        outputFile = Path.Combine(Path.GetDirectoryName(inputFile)!, outputFile);
-    }
+        string outputFile;
 
-    Directory.CreateDirectory(Path.GetDirectoryName(outputFile)!);
-
-    if (File.Exists(outputFile) && !options.Overwrite)
-    {
-        Console.WriteLine($"Skipping {inputFile}, output already exists.");
-        return;
-    }
-
-    // Build FFmpeg arguments
-    var arguments = $"-i \"{Path.GetFullPath(inputFile)}\" -c:v {options.Codec}";
-    if (!string.IsNullOrEmpty(options.Preset))
-    {
-        arguments += $" -preset {options.Preset}";
-    }
-
-    // Append FFmpeg-specific arguments
-    if (ffmpegArgs.Any())
-    {
-        arguments += $" {string.Join(" ", ffmpegArgs)}";
-    }
-
-    arguments += $" \"{Path.GetFullPath(outputFile)}\"";
-
-    if (!options.Verbose)
-    {
-        arguments = $"-loglevel error {arguments}";
-    }
-
-    //Console.WriteLine($"Executing FFmpeg command: ffmpeg {arguments}");
-
-    var process = new Process
-    {
-        StartInfo = new ProcessStartInfo
+        // Determine output file for conversion
+        if (options.Convert)
         {
-            FileName = "ffmpeg",
-            Arguments = arguments,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            RedirectStandardInput = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        }
-    };
-
-    try
-    {
-        process.Start();
-        TrackedProcesses.Add(process);
-
-        if (options.Overwrite)
-        {
-            await process.StandardInput.WriteLineAsync("Y");
-            await process.StandardInput.FlushAsync();
-        }
-
-        if (options.Verbose)
-        {
-            var outputTask = Task.Run(() =>
-            {
-                while (!process.StandardOutput.EndOfStream)
-                {
-                    Console.WriteLine(process.StandardOutput.ReadLine());
-                }
-            });
-
-            var errorTask = Task.Run(() =>
-            {
-                while (!process.StandardError.EndOfStream)
-                {
-                    Console.WriteLine(process.StandardError.ReadLine());
-                }
-            });
-
-            await Task.WhenAll(outputTask, errorTask);
-        }
-
-        await process.WaitForExitAsync();
-
-        if (process.ExitCode == 0)
-        {
-            Console.WriteLine($"FFmpeg process completed successfully for file: {inputFile}");
-            progress.Report(1.0 / totalFiles);
+            var targetExtension = options.OutputFormat ?? ".mkv"; // Default to MKV if not provided
+            var baseFileName = Path.Combine(Path.GetDirectoryName(inputFile)!,
+                Path.GetFileNameWithoutExtension(inputFile));
+            outputFile = $"{baseFileName}{targetExtension}";
         }
         else
         {
-            Console.WriteLine($"FFmpeg process exited with code {process.ExitCode}");
+            outputFile = GenerateOutputFilePath(inputFile, options.OutputPattern);
+        }
+
+        // Ensure output directory exists
+        Directory.CreateDirectory(Path.GetDirectoryName(outputFile)!);
+
+        if (File.Exists(outputFile) && !options.Overwrite)
+        {
+            Console.WriteLine($"Skipping {inputFile}, output already exists.");
+            return;
+        }
+
+        // Build FFmpeg arguments
+        var arguments = $"-i \"{Path.GetFullPath(inputFile)}\"";
+        if (options.Convert)
+        {
+            arguments += $" \"{outputFile}\"";
+        }
+        else
+        {
+            arguments += $" -c:v {options.Codec}";
+            if (!string.IsNullOrEmpty(options.Preset))
+            {
+                arguments += $" -preset {options.Preset}";
+            }
+
+            if (ffmpegArgs.Any())
+            {
+                arguments += $" {string.Join(" ", ffmpegArgs)}";
+            }
+
+            arguments += $" \"{Path.GetFullPath(outputFile)}\"";
+        }
+
+        // Set log level based on verbose mode
+        if (options.Verbose)
+        {
+            arguments = $"-loglevel verbose {arguments}";
+        }
+        else
+        {
+            arguments = $"-loglevel error {arguments}";
+        }
+
+        var process = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = "ffmpeg",
+                Arguments = arguments,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            }
+        };
+
+        try
+        {
+            process.Start();
+
+            // Capture and display output in verbose mode
+            if (options.Verbose)
+            {
+                var outputTask = Task.Run(() =>
+                {
+                    while (!process.StandardOutput.EndOfStream)
+                    {
+                        Console.WriteLine(process.StandardOutput.ReadLine());
+                    }
+                });
+
+                var errorTask = Task.Run(() =>
+                {
+                    while (!process.StandardError.EndOfStream)
+                    {
+                        Console.WriteLine(process.StandardError.ReadLine());
+                    }
+                });
+
+                await Task.WhenAll(outputTask, errorTask);
+            }
+            else
+            {
+                // Wait silently for process to finish
+                await process.WaitForExitAsync();
+            }
+
+            if (process.ExitCode == 0)
+            {
+                Console.WriteLine($"FFmpeg process completed successfully for file: {inputFile}");
+                progress.Report(1.0 / totalFiles);
+            }
+            else
+            {
+                Console.WriteLine($"FFmpeg process exited with code {process.ExitCode} for file: {inputFile}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error executing FFmpeg for file {inputFile}: {ex.Message}");
         }
     }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"Error executing FFmpeg: {ex.Message}");
-    }
-    finally
-    {
-        TrackedProcesses.TryTake(out process);
-    }
-}
-
 
     static string GenerateOutputFilePath(string inputFile, string pattern)
     {
@@ -322,18 +333,32 @@ class FFMP
     {
         bool isValid = true;
 
-        if (string.IsNullOrWhiteSpace(options.Codec))
+        if (options.Convert)
         {
-            Console.WriteLine("Error: The 'codec' argument is required.");
-            isValid = false;
+            // Ensure required fields for conversion
+            if (string.IsNullOrWhiteSpace(options.OutputFormat))
+            {
+                Console.WriteLine("Error: The 'output-format' argument is required when using '--convert'.");
+                isValid = false;
+            }
+        }
+        else
+        {
+            // Ensure required fields for transcoding
+            if (string.IsNullOrWhiteSpace(options.Codec))
+            {
+                Console.WriteLine("Error: The 'codec' argument is required.");
+                isValid = false;
+            }
+
+            if (string.IsNullOrWhiteSpace(options.OutputPattern))
+            {
+                Console.WriteLine("Error: The 'output-pattern' argument is required.");
+                isValid = false;
+            }
         }
 
-        if (string.IsNullOrWhiteSpace(options.OutputPattern))
-        {
-            Console.WriteLine("Error: The 'output-pattern' argument is required.");
-            isValid = false;
-        }
-
+        // Common validation for both modes
         if (string.IsNullOrWhiteSpace(options.InputDirectory) && string.IsNullOrWhiteSpace(options.InputFile))
         {
             Console.WriteLine("Error: Either 'directory' or 'file' argument must be provided for input.");

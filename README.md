@@ -31,6 +31,8 @@ A multithreaded C# CLI for digital media processing using FFMPEG. Transcode as m
 
 ## 💻 Usage
 
+### General Usage
+
 FFMP's usage is almost identical to FFMPEG, consider this simple example:
 
 ```bash
@@ -48,10 +50,28 @@ You can adjust your codec by using any codec that is installed on your system be
 
 If you need to pass any other arguments to FFMPEG (like audio codecs, video bitrate, subtitle processing, etc.) you can do it like this:
 
+### Advanced Arguments for FFMPEG
+
 ```bash
 dotnet path/to/FFMP.dll --codec libx265 --preset fast -t "/path/to/videos.txt" --output-pattern "/path/to/output/files/{{name}}_compressed{{ext}}" --threads 2 -- -crf 22 -pix_fmt yuv420p10le -c:a libopus -b:a 320k -c:s copy
 ```
 Everything behind the `--` indicator is passed directly to FFMPEG.
+
+### Mass-Converting Files
+
+Introduced in Version 1.3.0, FFMP now features "Mass-Converting" Files. This takes advantage of everything FFMP already offers and enables Mass-Converting files from one format to another.
+Not only can you provide directories or txt-files as sources, multiple videos are converted in parallel.
+
+**Converting using a directory**
+
+```bash
+dotnet path/to/FFMP.dll --convert -d "/path/to/videos/directory" --output-format .mkv
+```
+
+**Converting using a txt-file**
+```bash
+dotnet path/to/FFMP.dll --convert -d "/path/to/videos.txt" --output-format .mkv
+```
 
 If you want to see all of FFMPEGs output, just use the `--verbose` flag.
 
