@@ -216,7 +216,7 @@ class FFMP
         arguments = $"-loglevel error {arguments}";
     }
 
-    Console.WriteLine($"Executing FFmpeg command: ffmpeg {arguments}");
+    //Console.WriteLine($"Executing FFmpeg command: ffmpeg {arguments}");
 
     var process = new Process
     {
@@ -226,6 +226,7 @@ class FFMP
             Arguments = arguments,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
+            RedirectStandardInput = true, // Allow writing to the input stream
             UseShellExecute = false,
             CreateNoWindow = true
         }
@@ -235,6 +236,35 @@ class FFMP
     {
         process.Start();
         TrackedProcesses.Add(process); // Track the process
+
+        // If --overwrite is specified, write 'Y' to the input stream
+        if (options.Overwrite)
+        {
+            await process.StandardInput.WriteLineAsync("Y");
+            await process.StandardInput.FlushAsync();
+        }
+
+        // Handle verbose output
+        if (options.Verbose)
+        {
+            var outputTask = Task.Run(() =>
+            {
+                while (!process.StandardOutput.EndOfStream)
+                {
+                    Console.WriteLine(process.StandardOutput.ReadLine());
+                }
+            });
+
+            var errorTask = Task.Run(() =>
+            {
+                while (!process.StandardError.EndOfStream)
+                {
+                    Console.WriteLine(process.StandardError.ReadLine());
+                }
+            });
+
+            await Task.WhenAll(outputTask, errorTask);
+        }
 
         await process.WaitForExitAsync();
 
@@ -258,8 +288,6 @@ class FFMP
         TrackedProcesses.TryTake(out process);
     }
 }
-
-
     static string GenerateOutputFilePath(string inputFile, string pattern)
     {
         var directory = Path.GetDirectoryName(inputFile);
