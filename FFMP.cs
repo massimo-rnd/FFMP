@@ -5,7 +5,6 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using CommandLine;
@@ -24,14 +23,33 @@ class FFMP
                 Environment.Exit(1);
             }
 
-            Console.CancelKeyPress += (sender, e) => {
+            Console.CancelKeyPress += (sender, e) =>
+            {
                 Console.WriteLine("Terminating processes...");
-                Process.GetProcessesByName("ffmpeg").ToList().ForEach(p => p.Kill());
+                foreach (var process in TrackedProcesses.ToList())
+                {
+                    try
+                    {
+                        // Ensure process is valid and has not exited
+                        if (process != null && !process.HasExited)
+                        {
+                            process.Kill();
+                            Console.WriteLine($"Terminated FFmpeg process with ID {process.Id}");
+                        }
+                    }
+                    catch (InvalidOperationException ex)
+                    {
+                        Console.WriteLine($"Process already terminated or invalid: {ex.Message}");
+                    }
+                }
+
+                e.Cancel = true; // Prevent abrupt application exit
                 Environment.Exit(0);
             };
 
             Parser.Default.ParseArguments<Options>(args)
-                .WithParsed(options => {
+                .WithParsed(options =>
+                {
                     if (ValidateOptions(options))
                     {
                         Run(options).Wait();
@@ -41,12 +59,14 @@ class FFMP
                         Environment.Exit(1);
                     }
                 })
-                .WithNotParsed(errors => {
+                .WithNotParsed(errors =>
+                {
                     Console.WriteLine("Failed to parse arguments.");
                     foreach (var error in errors)
                     {
                         Console.WriteLine(error.ToString());
                     }
+
                     Environment.Exit(1);
                 });
         }
@@ -57,6 +77,7 @@ class FFMP
         }
     }
 
+    private static readonly ConcurrentBag<Process> TrackedProcesses = new ConcurrentBag<Process>();
 
     static async Task Run(Options options)
     {
@@ -120,12 +141,35 @@ class FFMP
                 var excludedExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
                 {
                     // Non-Media file filter
-                    ".txt", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".json", ".xml", ".html", 
-                    ".htm", ".exe", ".dll", ".bat", ".cmd", ".zip", ".rar", ".7z", ".tar", 
-                    ".gz", ".iso", ".bin", ".log", ".ini", ".cfg", ".tmp"
+                    ".txt",
+                    ".doc",
+                    ".docx",
+                    ".xls",
+                    ".xlsx",
+                    ".csv",
+                    ".json",
+                    ".xml",
+                    ".html",
+                    ".htm",
+                    ".exe",
+                    ".dll",
+                    ".bat",
+                    ".cmd",
+                    ".zip",
+                    ".rar",
+                    ".7z",
+                    ".tar",
+                    ".gz",
+                    ".iso",
+                    ".bin",
+                    ".log",
+                    ".ini",
+                    ".cfg",
+                    ".tmp"
                 };
 
-                return Directory.EnumerateFiles(Path.GetFullPath(options.InputDirectory), "*.*", SearchOption.AllDirectories)
+                return Directory
+                    .EnumerateFiles(Path.GetFullPath(options.InputDirectory), "*.*", SearchOption.AllDirectories)
                     .Where(file => !excludedExtensions.Contains(Path.GetExtension(file)));
             }
 
@@ -143,105 +187,77 @@ class FFMP
     }
 
     static async Task ProcessFile(string inputFile, Options options, ProgressBar progress, int totalFiles)
+{
+    var outputFile = GenerateOutputFilePath(inputFile, options.OutputPattern);
+
+    if (string.IsNullOrEmpty(Path.GetDirectoryName(outputFile)))
     {
-        var outputFile = GenerateOutputFilePath(inputFile, options.OutputPattern);
+        outputFile = Path.Combine(Path.GetDirectoryName(inputFile)!, outputFile);
+    }
 
-        // Ensure directory exists or defaults to the input file's directory
-        if (string.IsNullOrEmpty(Path.GetDirectoryName(outputFile)))
+    Directory.CreateDirectory(Path.GetDirectoryName(outputFile)!);
+
+    if (File.Exists(outputFile) && !options.Overwrite)
+    {
+        Console.WriteLine($"Skipping {inputFile}, output already exists.");
+        return;
+    }
+
+    var arguments = $"-i \"{Path.GetFullPath(inputFile)}\" -c:v {options.Codec}";
+    if (!string.IsNullOrEmpty(options.Preset))
+    {
+        arguments += $" -preset {options.Preset}";
+    }
+
+    arguments += $" \"{Path.GetFullPath(outputFile)}\"";
+
+    if (!options.Verbose)
+    {
+        arguments = $"-loglevel error {arguments}";
+    }
+
+    Console.WriteLine($"Executing FFmpeg command: ffmpeg {arguments}");
+
+    var process = new Process
+    {
+        StartInfo = new ProcessStartInfo
         {
-            outputFile = Path.Combine(Path.GetDirectoryName(inputFile)!, outputFile);
+            FileName = "ffmpeg",
+            Arguments = arguments,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
         }
+    };
 
-        Directory.CreateDirectory(Path.GetDirectoryName(outputFile)!);
+    try
+    {
+        process.Start();
+        TrackedProcesses.Add(process); // Track the process
 
-        if (File.Exists(outputFile) && !options.Overwrite)
+        await process.WaitForExitAsync();
+
+        if (process.ExitCode == 0)
         {
-            Console.WriteLine($"Skipping {inputFile}, output already exists.");
-            return;
+            Console.WriteLine($"FFmpeg process completed successfully for file: {inputFile}");
+            progress.Report(1.0 / totalFiles);
         }
-
-        var ffmpegOptions = options.FFmpegOptions.TrimStart('=');
-
-        inputFile = $"\"{Path.GetFullPath(inputFile)}\"";
-        outputFile = $"\"{Path.GetFullPath(outputFile)}\"";
-
-        var arguments = $"-i {inputFile} -c:v {options.Codec}";
-        if (!string.IsNullOrEmpty(options.Preset))
+        else
         {
-            arguments += $" -preset {options.Preset}";
-        }
-
-        arguments += $" {outputFile}";
-
-        if (!options.Verbose)
-        {
-            arguments = $"-loglevel error {arguments}";
-        }
-
-        Console.WriteLine($"Executing FFmpeg command: ffmpeg {arguments}");
-
-        var process = new Process
-        {
-            StartInfo = new ProcessStartInfo
-            {
-                FileName = "ffmpeg",
-                Arguments = arguments,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                RedirectStandardInput = true, // Added to allow input redirection
-                UseShellExecute = false,
-                CreateNoWindow = true
-            }
-        };
-
-        var errorOutput = new StringBuilder();
-        try
-        {
-            process.Start();
-
-            // Write 'Y' to the StandardInput stream to confirm overwrite
-            if (options.Overwrite)
-            {
-                using (var writer = process.StandardInput)
-                {
-                    writer.WriteLine("Y");
-                }
-            }
-
-            process.ErrorDataReceived += (sender, e) =>
-            {
-                if (!string.IsNullOrEmpty(e.Data))
-                {
-                    errorOutput.AppendLine(e.Data);
-                    if (options.Verbose) Console.Error.WriteLine(e.Data);
-                }
-            };
-
-            process.BeginErrorReadLine();
-
-            await process.WaitForExitAsync();
-
-            if (process.ExitCode != 0)
-            {
-                Console.WriteLine($"FFmpeg process exited with code: {process.ExitCode}");
-                Console.WriteLine("FFmpeg encountered an error:");
-                Console.WriteLine(errorOutput.ToString());
-            }
-            else
-            {
-                Console.WriteLine($"FFmpeg process completed successfully for file: {inputFile}");
-                progress.Report(1.0 / totalFiles); // Update progress only on success
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error executing FFmpeg: {ex.Message}");
-        }
-        finally
-        {
-            process.Dispose();
+            Console.WriteLine($"FFmpeg process exited with code {process.ExitCode}");
         }
     }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Error executing FFmpeg: {ex.Message}");
+    }
+    finally
+    {
+        // Remove process from tracking after it exits
+        TrackedProcesses.TryTake(out process);
+    }
+}
 
 
     static string GenerateOutputFilePath(string inputFile, string pattern)
@@ -251,8 +267,8 @@ class FFMP
         var extension = Path.GetExtension(inputFile);
 
         var outputPath = pattern.Replace("{{dir}}", directory)
-                                .Replace("{{name}}", fileName)
-                                .Replace("{{ext}}", extension);
+            .Replace("{{name}}", fileName)
+            .Replace("{{ext}}", extension);
 
         // Ensure the output path has a directory; default to input file's directory
         if (string.IsNullOrWhiteSpace(Path.GetDirectoryName(outputPath)))
@@ -262,7 +278,7 @@ class FFMP
 
         return outputPath;
     }
-    
+
     private static bool ValidateOptions(Options options)
     {
         bool isValid = true;
@@ -299,5 +315,4 @@ class FFMP
 
         return isValid;
     }
-
 }
