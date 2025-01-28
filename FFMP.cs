@@ -151,6 +151,7 @@ class FFMP
         {
             outputFile = Path.Combine(Path.GetDirectoryName(inputFile)!, outputFile);
         }
+
         Directory.CreateDirectory(Path.GetDirectoryName(outputFile)!);
 
         if (File.Exists(outputFile) && !options.Overwrite)
@@ -169,6 +170,7 @@ class FFMP
         {
             arguments += $" -preset {options.Preset}";
         }
+
         arguments += $" {outputFile}";
 
         if (!options.Verbose)
@@ -211,8 +213,7 @@ class FFMP
                 if (!string.IsNullOrEmpty(e.Data))
                 {
                     errorOutput.AppendLine(e.Data);
-                    if (options.Verbose)
-                        Console.Error.WriteLine(e.Data);
+                    if (options.Verbose) Console.Error.WriteLine(e.Data);
                 }
             };
 
@@ -229,6 +230,7 @@ class FFMP
             else
             {
                 Console.WriteLine($"FFmpeg process completed successfully for file: {inputFile}");
+                progress.Report(1.0 / totalFiles); // Update progress only on success
             }
         }
         catch (Exception ex)
@@ -237,10 +239,10 @@ class FFMP
         }
         finally
         {
-            progress.Report(1.0 / totalFiles);
             process.Dispose();
         }
     }
+
 
     static string GenerateOutputFilePath(string inputFile, string pattern)
     {
