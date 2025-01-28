@@ -109,7 +109,7 @@ class FFMP
                     ".gz", ".iso", ".bin", ".log", ".ini", ".cfg", ".tmp"
                 };
 
-                return Directory.EnumerateFiles(Path.GetFullPath(options.InputDirectory), "*.*")
+                return Directory.EnumerateFiles(Path.GetFullPath(options.InputDirectory), "*.*", SearchOption.AllDirectories)
                     .Where(file => !excludedExtensions.Contains(Path.GetExtension(file)));
             }
 
