@@ -12,74 +12,78 @@ using CommandLine;
 class FFMP
 {
     static void Main(string[] args)
+{
+    try
     {
-        try
+        Console.WriteLine("Starting application...");
+
+        // Split args into application and FFmpeg arguments
+        var appArgs = args.TakeWhile(arg => arg != "--").ToArray();
+        var ffmpegArgs = args.SkipWhile(arg => arg != "--").Skip(1).ToArray();
+
+        if (!appArgs.Any())
         {
-            Console.WriteLine("Starting application...");
+            Console.WriteLine("Error: No arguments provided. Please specify required arguments.");
+            Environment.Exit(1);
+        }
 
-            if (args == null || args.Length == 0)
+        Console.CancelKeyPress += (sender, e) =>
+        {
+            Console.WriteLine("Terminating processes...");
+            foreach (var process in TrackedProcesses.ToList())
             {
-                Console.WriteLine("Error: No arguments provided. Please specify required arguments.");
-                Environment.Exit(1);
-            }
-
-            Console.CancelKeyPress += (sender, e) =>
-            {
-                Console.WriteLine("Terminating processes...");
-                foreach (var process in TrackedProcesses.ToList())
+                try
                 {
-                    try
+                    if (process != null && !process.HasExited)
                     {
-                        // Ensure process is valid and has not exited
-                        if (process != null && !process.HasExited)
-                        {
-                            process.Kill();
-                            Console.WriteLine($"Terminated FFmpeg process with ID {process.Id}");
-                        }
-                    }
-                    catch (InvalidOperationException ex)
-                    {
-                        Console.WriteLine($"Process already terminated or invalid: {ex.Message}");
+                        process.Kill();
+                        Console.WriteLine($"Terminated FFmpeg process with ID {process.Id}");
                     }
                 }
-
-                e.Cancel = true; // Prevent abrupt application exit
-                Environment.Exit(0);
-            };
-
-            Parser.Default.ParseArguments<Options>(args)
-                .WithParsed(options =>
+                catch (InvalidOperationException ex)
                 {
-                    if (ValidateOptions(options))
-                    {
-                        Run(options).Wait();
-                    }
-                    else
-                    {
-                        Environment.Exit(1);
-                    }
-                })
-                .WithNotParsed(errors =>
-                {
-                    Console.WriteLine("Failed to parse arguments.");
-                    foreach (var error in errors)
-                    {
-                        Console.WriteLine(error.ToString());
-                    }
+                    Console.WriteLine($"Process already terminated or invalid: {ex.Message}");
+                }
+            }
 
+            e.Cancel = true;
+            Environment.Exit(0);
+        };
+
+        Parser.Default.ParseArguments<Options>(appArgs)
+            .WithParsed(options =>
+            {
+                if (ValidateOptions(options))
+                {
+                    Run(options, ffmpegArgs).Wait();
+                }
+                else
+                {
                     Environment.Exit(1);
-                });
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Fatal error: {ex.Message}");
-            Console.WriteLine(ex.StackTrace);
-        }
+                }
+            })
+            .WithNotParsed(errors =>
+            {
+                Console.WriteLine("Failed to parse arguments.");
+                foreach (var error in errors)
+                {
+                    Console.WriteLine(error.ToString());
+                }
+
+                Environment.Exit(1);
+            });
     }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Fatal error: {ex.Message}");
+        Console.WriteLine(ex.StackTrace);
+    }
+}
+
 
     private static readonly ConcurrentBag<Process> TrackedProcesses = new ConcurrentBag<Process>();
 
-    static async Task Run(Options options)
+    static async Task Run(Options options, string[] ffmpegArgs)
     {
         try
         {
@@ -109,7 +113,7 @@ class FFMP
                     try
                     {
                         Console.WriteLine($"Processing file: {inputFile}");
-                        await ProcessFile(inputFile, options, progress, inputFiles.Count);
+                        await ProcessFile(inputFile, options, ffmpegArgs, progress, inputFiles.Count);
                     }
                     catch (Exception ex)
                     {
@@ -131,6 +135,7 @@ class FFMP
             Console.WriteLine($"Error: {ex.Message}");
         }
     }
+
 
     static IEnumerable<string> GetInputFiles(Options options)
     {
@@ -186,7 +191,7 @@ class FFMP
         return Enumerable.Empty<string>();
     }
 
-    static async Task ProcessFile(string inputFile, Options options, ProgressBar progress, int totalFiles)
+    static async Task ProcessFile(string inputFile, Options options, string[] ffmpegArgs, ProgressBar progress, int totalFiles)
 {
     var outputFile = GenerateOutputFilePath(inputFile, options.OutputPattern);
 
@@ -203,10 +208,17 @@ class FFMP
         return;
     }
 
+    // Build FFmpeg arguments
     var arguments = $"-i \"{Path.GetFullPath(inputFile)}\" -c:v {options.Codec}";
     if (!string.IsNullOrEmpty(options.Preset))
     {
         arguments += $" -preset {options.Preset}";
+    }
+
+    // Append FFmpeg-specific arguments
+    if (ffmpegArgs.Any())
+    {
+        arguments += $" {string.Join(" ", ffmpegArgs)}";
     }
 
     arguments += $" \"{Path.GetFullPath(outputFile)}\"";
@@ -226,7 +238,7 @@ class FFMP
             Arguments = arguments,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
-            RedirectStandardInput = true, // Allow writing to the input stream
+            RedirectStandardInput = true,
             UseShellExecute = false,
             CreateNoWindow = true
         }
@@ -235,16 +247,14 @@ class FFMP
     try
     {
         process.Start();
-        TrackedProcesses.Add(process); // Track the process
+        TrackedProcesses.Add(process);
 
-        // If --overwrite is specified, write 'Y' to the input stream
         if (options.Overwrite)
         {
             await process.StandardInput.WriteLineAsync("Y");
             await process.StandardInput.FlushAsync();
         }
 
-        // Handle verbose output
         if (options.Verbose)
         {
             var outputTask = Task.Run(() =>
@@ -284,10 +294,11 @@ class FFMP
     }
     finally
     {
-        // Remove process from tracking after it exits
         TrackedProcesses.TryTake(out process);
     }
 }
+
+
     static string GenerateOutputFilePath(string inputFile, string pattern)
     {
         var directory = Path.GetDirectoryName(inputFile);

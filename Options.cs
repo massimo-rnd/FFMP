@@ -31,4 +31,8 @@ public class Options
 
     [Option("output-pattern", Required = true, HelpText = "Pattern for output file paths. Use {{name}}, {{ext}}, and {{dir}} placeholders.")]
     public string OutputPattern { get; set; } = string.Empty;
+    
+    [Value(0, Required = false, HelpText = "Arguments to pass directly to FFmpeg after '--'.")]
+    public IEnumerable<string> FFmpegArguments { get; set; } = Enumerable.Empty<string>();
+
 }
