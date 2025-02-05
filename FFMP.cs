@@ -7,7 +7,6 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Management;
 using CommandLine;
 
 class FFMP
@@ -223,22 +222,8 @@ class FFMP
     static async Task ProcessFile(string inputFile, Options options, string[] ffmpegArgs, ProgressBar progress,
         int totalFiles)
     {
-        string outputFile;
+        string outputFile = GenerateOutputFilePath(inputFile, options.OutputPattern);
 
-        // Determine output file for conversion
-        if (options.Convert)
-        {
-            var targetExtension = options.OutputFormat ?? ".mkv"; // Default to MKV if not provided
-            var baseFileName = Path.Combine(Path.GetDirectoryName(inputFile)!,
-                Path.GetFileNameWithoutExtension(inputFile));
-            outputFile = $"{baseFileName}{targetExtension}";
-        }
-        else
-        {
-            outputFile = GenerateOutputFilePath(inputFile, options.OutputPattern);
-        }
-
-        // Ensure output directory exists
         Directory.CreateDirectory(Path.GetDirectoryName(outputFile)!);
 
         if (File.Exists(outputFile) && !options.Overwrite)
@@ -249,29 +234,13 @@ class FFMP
 
         // Build FFmpeg arguments
         var arguments = options.Overwrite ? "-y " : "";
-        arguments += $"-i \"{Path.GetFullPath(inputFile)}\"";
-        
-        if (options.Convert)
-        {
-            arguments += $" \"{outputFile}\"";
-        }
-        else
-        {
-            arguments += $" -c:v {options.Codec}";
-            if (!string.IsNullOrEmpty(options.Preset))
-            {
-                arguments += $" -preset {options.Preset}";
-            }
+        arguments += $"-i \"{Path.GetFullPath(inputFile)}\" \"{outputFile}\"";
 
-            if (ffmpegArgs.Any())
-            {
-                arguments += $" {string.Join(" ", ffmpegArgs)}";
-            }
-
-            arguments += $" \"{Path.GetFullPath(outputFile)}\"";
+        if (ffmpegArgs.Any())
+        {
+            arguments += $" {string.Join(" ", ffmpegArgs)}";
         }
 
-        // Set log level based on verbose mode
         if (options.Verbose)
         {
             arguments = $"-loglevel verbose {arguments}";
@@ -297,7 +266,7 @@ class FFMP
         try
         {
             process.Start();
-
+            
             // Capture and display output in verbose mode
             if (options.Verbose)
             {
@@ -334,6 +303,8 @@ class FFMP
             {
                 Console.WriteLine($"FFmpeg process exited with code {process.ExitCode} for file: {inputFile}");
             }
+            
+            await process.WaitForExitAsync();
         }
         catch (Exception ex)
         {
@@ -367,9 +338,9 @@ class FFMP
         if (options.Convert)
         {
             // Ensure required fields for conversion
-            if (string.IsNullOrWhiteSpace(options.OutputFormat))
+            if (string.IsNullOrWhiteSpace(options.OutputPattern))
             {
-                Console.WriteLine("Error: The 'output-format' argument is required when using '--convert'.");
+                Console.WriteLine("Error: The 'output-pattern' argument is required when using '--convert'.");
                 isValid = false;
             }
         }
