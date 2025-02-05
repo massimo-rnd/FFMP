@@ -7,6 +7,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Management;
 using CommandLine;
 
 class FFMP
@@ -43,6 +44,31 @@ class FFMP
                     catch (InvalidOperationException ex)
                     {
                         Console.WriteLine($"Process already terminated or invalid: {ex.Message}");
+                    }
+                }
+                
+                // Additional fix for Windows: Kill all FFmpeg processes by name
+                if (Environment.OSVersion.Platform == PlatformID.Win32NT)
+                {
+                    try
+                    {
+                        var ffmpegProcesses = Process.GetProcessesByName("ffmpeg");
+                        foreach (var ffmpegProcess in ffmpegProcesses)
+                        {
+                            try
+                            {
+                                ffmpegProcess.Kill();
+                                Console.WriteLine($"Force-killed FFmpeg process with ID {ffmpegProcess.Id}");
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine($"Error killing FFmpeg process {ffmpegProcess.Id}: {ex.Message}");
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Error retrieving FFmpeg processes: {ex.Message}");
                     }
                 }
 
