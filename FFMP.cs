@@ -90,11 +90,14 @@ class FFMP
                 })
                 .WithNotParsed(errors =>
                 {
-                    Console.WriteLine("Failed to parse arguments.");
-                    foreach (var error in errors)
+                    // Check if the user requested help/version information
+                    if (errors.Any(error => error is CommandLine.HelpRequestedError || error is CommandLine.VersionRequestedError))
                     {
-                        Console.WriteLine(error.ToString());
+                        Environment.Exit(0); // Exit without error message
                     }
+
+                    // Otherwise, print an actual error message
+                    Console.WriteLine("Error: Invalid arguments provided.");
 
                     Environment.Exit(1);
                 });
