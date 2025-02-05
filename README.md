@@ -65,12 +65,12 @@ Not only can you provide directories or txt-files as sources, multiple videos ar
 **Converting using a directory**
 
 ```bash
-dotnet path/to/FFMP.dll --convert -d "/path/to/videos/directory" --output-format .mkv
+dotnet path/to/FFMP.dll --convert -d "/path/to/videos/directory" --output-pattern "/path/to/output/files/{{name}}_compressed.mkv"
 ```
 
 **Converting using a txt-file**
 ```bash
-dotnet path/to/FFMP.dll --convert -d "/path/to/videos.txt" --output-format .mkv
+dotnet path/to/FFMP.dll --convert -d "/path/to/videos.txt" --output-pattern "/path/to/output/files/{{name}}_compressed.mkv"
 ```
 
 If you want to see all of FFMPEGs output, just use the `--verbose` flag.

@@ -34,10 +34,7 @@ public class Options
 
     [Option("convert", Default = false, HelpText = "Enable conversion mode.")]
     public bool Convert { get; set; }
-
-    [Option("output-format", HelpText = "Target output format (e.g., '.mkv').")]
-    public string? OutputFormat { get; set; }
-
+    
     [Value(0, HelpText = "Arguments to pass directly to FFmpeg after '--'.")]
     public IEnumerable<string> FFmpegArguments { get; set; } = Enumerable.Empty<string>();
 }
