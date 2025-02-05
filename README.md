@@ -88,8 +88,6 @@ Feel free to check the [issues page](https://github.com/massimo-rnd/FFMP/issues)
 4. Push to the branch (`git push origin feature/AmazingFeature`).
 5. Open a pull request.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for more details.
-
 ## 📜 License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
