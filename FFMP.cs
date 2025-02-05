@@ -245,7 +245,9 @@ class FFMP
         }
 
         // Build FFmpeg arguments
-        var arguments = $"-i \"{Path.GetFullPath(inputFile)}\"";
+        var arguments = options.Overwrite ? "-y " : "";
+        arguments += $"-i \"{Path.GetFullPath(inputFile)}\"";
+        
         if (options.Convert)
         {
             arguments += $" \"{outputFile}\"";
